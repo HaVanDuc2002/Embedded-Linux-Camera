@@ -25,7 +25,7 @@
 namespace streamer {
 
 // Queue pop timeout
-constexpr int QUEUE_TIMEOUT_MS = 1000;
+constexpr int QUEUE_TIMEOUT_MS = 100;
 
 TlsClient::TlsClient(const TlsConfig& config)
     : config_(config) {
@@ -180,6 +180,12 @@ int TlsClient::createTcpConnection(const char* host, uint16_t port) {
 
         // Restore blocking mode — SSL requires it
         fcntl(sockfd, F_SETFL, saved_flags);
+
+        // Set send timeout so SSL_write unblocks if the server stops reading
+        struct timeval snd_tv;
+        snd_tv.tv_sec  = config_.send_timeout_ms / 1000;
+        snd_tv.tv_usec = (config_.send_timeout_ms % 1000) * 1000;
+        setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &snd_tv, sizeof(snd_tv));
         break;
     }
 
@@ -312,6 +318,10 @@ bool TlsClient::sslWriteAll(const void* data, size_t len) {
 
                 case SSL_ERROR_SYSCALL:
                     if (errno == EINTR) continue;
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        LOG_ERROR << "SSL_write timed out (server not reading)";
+                        return false;
+                    }
                     LOG_ERRNO(errno) << "SSL_write syscall error";
                     return false;
 

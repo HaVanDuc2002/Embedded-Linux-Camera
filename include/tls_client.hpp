@@ -24,6 +24,7 @@ struct TlsConfig {
 
     // Connection settings
     uint32_t connect_timeout_ms  = 5000;   // TCP connect timeout
+    uint32_t send_timeout_ms     = 5000;  // SSL_write timeout (server not reading)
 
     // Reconnect settings
     uint32_t reconnect_base_ms   = 1000;   // Base delay
