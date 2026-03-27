@@ -18,11 +18,11 @@ Yocto repository: https://github.com/cu-ecen-aeld/assignment-6-HaVanDuc2002
 ## Architecture
 
 ```
- RPi (Client)                                    PC (Server)
-┌──────────────────────────────────────┐    ┌─────────────────────┐
-│  Capture Thread ──> RingQueue ──> Network Thread ──TLS──> frame_server │
-│  (OpenCV / V4L2)   (mmap slots)   (OpenSSL)      │    │  (saves frames) │
-└──────────────────────────────────────┘    └─────────────────────┘
+ RPi (Client)                                                   PC (Server)
+┌───────────────────────────────────────────────────┐          ┌─────────────────────┐
+│  Capture Thread ──> RingQueue ──> Network Thread  │ ──TLS──> │  frame_server       │
+│  (OpenCV / V4L2)   (mmap slots)   (OpenSSL)       │          │  (saves frames)     │
+└───────────────────────────────────────────────────┘          └─────────────────────┘
 ```
 
 - **Capture thread**: reads frames from the camera via `cv::VideoCapture`, JPEG-encodes them, and pushes into the ring queue
