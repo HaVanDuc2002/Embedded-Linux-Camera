@@ -18,16 +18,28 @@ Yocto repository: https://github.com/cu-ecen-aeld/assignment-6-HaVanDuc2002
 ## Architecture
 
 ```
- RPi (Client)                                                   PC (Server)
-┌───────────────────────────────────────────────────┐          ┌─────────────────────┐
-│  Capture Thread ──> RingQueue ──> Network Thread  │ ──TLS──> │  frame_server       │
-│  (OpenCV / V4L2)   (mmap slots)   (OpenSSL)       │          │  (saves frames)     │
-└───────────────────────────────────────────────────┘          └─────────────────────┘
+ RPi userspace                                                   PC
+┌───────────────────────────────────────────────────┐          ┌─────────────────┐
+│ Camera -> Capture Thread -> RingQueue -> TLS Clien│ ==TLS==> │  frame_server   │
+│           OpenCV/V4L2      mmap slots   OpenSSL   │          │  saves frames   │
+│                    │                              │          └─────────────────┘
+│                    │ ioctl events                 │
+│ camera_monitor_ctl │                              │
+│   query/reset/poll │                              │
+└───────────│────────┼──────────────────────────────┘
+            │        │
+ RPi kernel │        v
+┌───────────v───────────────────────────────────────┐
+│ camera_monitor platform/character driver          │
+│ /dev/camera_monitor  |  debugfs statistics        │
+└───────────────────────────────────────────────────┘
 ```
 
 - **Capture thread**: reads frames from the camera via `cv::VideoCapture`, JPEG-encodes them, and pushes into the ring queue
 - **Ring queue**: mmap-backed circular buffer (default 128 slots, max 4 MB/frame); when full, the oldest frame is dropped to keep capture running
 - **Network thread**: pops frames from the queue, connects to the server over TLS with automatic reconnect, and streams frames using the binary wire protocol
+- **Camera monitor**: optional kernel driver that receives frame, drop, error, and state events through ioctl; it exposes statistics through `/dev/camera_monitor` and debugfs
+- **Monitor control**: `camera_monitor_ctl` queries or resets counters and uses `poll()` to wait for capture errors
 
 ## Dependencies
 
@@ -250,6 +262,22 @@ Log messages are written simultaneously to:
 Format: `[LEVEL] [YYYY-MM-DD HH:MM:SS.mmm] [file:line] message`
 
 Log level is controlled at runtime: default is `INFO`; pass `--verbose` for `DEBUG`.
+
+## Kernel camera monitor
+
+The optional `camera_monitor` module exposes `/dev/camera_monitor` and tracks
+captured frames, queue drops, capture errors, and camera state. The streamer
+continues normally when the module is not loaded.
+
+```bash
+camera_monitor_ctl stats       # Query through ioctl
+camera_monitor_ctl reset       # Reset all counters
+camera_monitor_ctl watch       # Poll until a capture error occurs
+cat /sys/kernel/debug/camera_monitor/stats
+```
+
+For a device-tree-created platform device, use compatible
+`"aesd,camera-monitor"` and load the module with `auto_create=0`.
 
 ## Project Structure
 
