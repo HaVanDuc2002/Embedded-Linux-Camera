@@ -15,6 +15,7 @@ namespace streamer {
 
 // Forward declaration
 class RingQueue;
+class CameraMonitor;
 
 // Capture configuration
 struct CameraConfig {
@@ -24,6 +25,7 @@ struct CameraConfig {
     uint32_t fps      = 30;     // Requested frame rate
     bool use_jpeg     = true;   // Encode frames as JPEG for efficient transmission
     int jpeg_quality  = 85;     // JPEG quality (1-100)
+    CameraMonitor* monitor = nullptr; // Optional kernel monitor integration
 };
 
 /**
@@ -109,6 +111,7 @@ private:
 
     bool streaming_ = false;
     std::atomic<uint64_t> frame_seq_{0};
+    CameraMonitor* monitor_ = nullptr;
 
     // JPEG encoding parameters
     std::vector<int> jpeg_params_;

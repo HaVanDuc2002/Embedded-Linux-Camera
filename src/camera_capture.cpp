@@ -4,6 +4,7 @@
  */
 
 #include "camera_capture.hpp"
+#include "camera_monitor.hpp"
 #include "ring_queue.hpp"
 #include "protocol.hpp"
 #include "log.hpp"
@@ -14,7 +15,7 @@
 namespace streamer {
 
 CameraCapture::CameraCapture(const CameraConfig& config)
-    : config_(config) {
+    : config_(config), monitor_(config.monitor) {
     // Setup JPEG encoding parameters
     jpeg_params_ = {cv::IMWRITE_JPEG_QUALITY, config.jpeg_quality};
 }
@@ -57,6 +58,7 @@ bool CameraCapture::open() {
 
     if (!opened) {
         LOG_ERROR << "Failed to open camera: " << config_.device;
+        if (monitor_) monitor_->reportError();
         return false;
     }
 
@@ -90,17 +92,21 @@ bool CameraCapture::open() {
                  << ") differs from requested (" << config_.width << "x" << config_.height << ")";
     }
 
+    if (monitor_) monitor_->setState(CAMERA_MONITOR_STATE_STOPPED);
+
     return true;
 }
 
 bool CameraCapture::start() {
     if (!cap_.isOpened()) {
         LOG_ERROR << "Cannot start capture: camera not opened";
+        if (monitor_) monitor_->reportError();
         return false;
     }
 
     streaming_ = true;
     frame_seq_ = 0;
+    if (monitor_) monitor_->setState(CAMERA_MONITOR_STATE_RUNNING);
     LOG_INFO << "Capture streaming started";
     return true;
 }
@@ -108,6 +114,7 @@ bool CameraCapture::start() {
 void CameraCapture::stop() {
     if (streaming_) {
         streaming_ = false;
+        if (monitor_) monitor_->setState(CAMERA_MONITOR_STATE_STOPPED);
         LOG_INFO << "Capture streaming stopped";
     }
 }
@@ -131,11 +138,14 @@ void CameraCapture::captureLoop(RingQueue& queue, const std::atomic<bool>& runni
 
     cv::Mat frame;
     std::vector<uint8_t> encoded_data;
+    bool recovering_from_error = false;
 
     while (running.load() && streaming_) {
         // Capture frame
         if (!cap_.read(frame)) {
             LOG_WARN << "Failed to read frame from camera";
+            if (monitor_) monitor_->reportError();
+            recovering_from_error = true;
             struct timespec ts{0, 10000000L};  // 10 ms
             nanosleep(&ts, nullptr);
             continue;
@@ -143,7 +153,17 @@ void CameraCapture::captureLoop(RingQueue& queue, const std::atomic<bool>& runni
 
         if (frame.empty()) {
             LOG_WARN << "Empty frame received";
+            if (monitor_) monitor_->reportError();
+            recovering_from_error = true;
             continue;
+        }
+
+        if (monitor_) {
+            monitor_->reportFrame();
+            if (recovering_from_error) {
+                monitor_->setState(CAMERA_MONITOR_STATE_RUNNING);
+                recovering_from_error = false;
+            }
         }
 
         // Get timestamp
@@ -157,6 +177,8 @@ void CameraCapture::captureLoop(RingQueue& queue, const std::atomic<bool>& runni
             // Encode as JPEG
             if (!encodeJpeg(frame, encoded_data)) {
                 LOG_WARN << "Failed to encode frame as JPEG";
+                if (monitor_) monitor_->reportError();
+                recovering_from_error = true;
                 continue;
             }
             data_ptr = encoded_data.data();
@@ -169,6 +191,7 @@ void CameraCapture::captureLoop(RingQueue& queue, const std::atomic<bool>& runni
 
         // Push frame to queue
         uint64_t seq = frame_seq_++;
+        const auto stats_before = queue.getStats();
         bool pushed = queue.push(
             seq,
             timestamp_ns,
@@ -178,6 +201,15 @@ void CameraCapture::captureLoop(RingQueue& queue, const std::atomic<bool>& runni
             static_cast<uint16_t>(frame.cols),
             static_cast<uint16_t>(frame.rows)
         );
+
+        const auto stats_after = queue.getStats();
+        uint64_t dropped = stats_after.frames_dropped - stats_before.frames_dropped;
+        if (!pushed && dropped == 0) {
+            dropped = 1;
+        }
+        if (monitor_ && dropped != 0) {
+            monitor_->reportDrop(dropped);
+        }
 
         if (!pushed) {
             LOG_DEBUG << "Frame " << seq << " dropped";

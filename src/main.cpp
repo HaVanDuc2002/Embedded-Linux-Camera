@@ -29,6 +29,7 @@
 #include "log.hpp"
 #include "ring_queue.hpp"
 #include "camera_capture.hpp"
+#include "camera_monitor.hpp"
 #include "tls_client.hpp"
 
 using namespace streamer;
@@ -241,6 +242,12 @@ int main(int argc, char* argv[]) {
              << config.height << " @ " << config.fps << " fps";
     LOG_INFO << "Server: " << config.host << ":" << config.port;
 
+    CameraMonitor monitor;
+    if (monitor.isAvailable()) {
+        monitor.resetCounters();
+        monitor.setState(CAMERA_MONITOR_STATE_STOPPED);
+    }
+
     // Setup signal handlers via POSIX sigaction
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
@@ -268,6 +275,7 @@ int main(int argc, char* argv[]) {
         cam_config.fps = config.fps;
         cam_config.use_jpeg = config.use_jpeg;
         cam_config.jpeg_quality = config.jpeg_quality;
+        cam_config.monitor = &monitor;
 
         CameraCapture* capture = new CameraCapture(cam_config);
         if (!capture->open()) {
@@ -326,6 +334,15 @@ int main(int argc, char* argv[]) {
                 LOG_INFO << "Stats: captured=" << stats.frames_pushed
                          << ", dropped=" << stats.frames_dropped
                          << ", sent=" << stats.frames_popped;
+
+                camera_monitor_stats monitor_stats{};
+                if (monitor.getStats(monitor_stats)) {
+                    LOG_DEBUG << "Kernel monitor: captured="
+                              << monitor_stats.frames_captured
+                              << ", dropped=" << monitor_stats.frames_dropped
+                              << ", errors=" << monitor_stats.capture_errors
+                              << ", state=" << monitor_stats.state;
+                }
             }
         }
 
