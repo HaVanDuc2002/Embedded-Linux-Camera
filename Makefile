@@ -38,6 +38,8 @@ CLIENT_SRCS = $(SRC_DIR)/main.cpp \
               $(SRC_DIR)/tls_client.cpp
 CLIENT_OBJS = $(CLIENT_SRCS:$(SRC_DIR)/%.cpp=$(OUT_DIR)/%.o)
 CLIENT_TARGET = $(OUT_DIR)/camera_streamer
+MONITOR_CTL_TARGET = $(OUT_DIR)/camera_monitor_ctl
+MONITOR_CTL_OBJ = $(OUT_DIR)/camera_monitor_ctl.o
 
 # Server source files
 SERVER_SRCS = $(SVR_DIR)/server.cpp
@@ -52,11 +54,14 @@ $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
 
 # Client build
-client: $(OUT_DIR) $(CLIENT_TARGET)
+client: $(OUT_DIR) $(CLIENT_TARGET) $(MONITOR_CTL_TARGET)
 	@echo "Client built: $(CLIENT_TARGET)"
 
 $(CLIENT_TARGET): $(CLIENT_OBJS)
 	$(CXX) $(LDFLAGS) $(PROJ_LDFLAGS) -o $@ $^ $(LIBS)
+
+$(MONITOR_CTL_TARGET): $(MONITOR_CTL_OBJ)
+	$(CXX) $(LDFLAGS) $(PROJ_LDFLAGS) -o $@ $^
 
 $(OUT_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) $(PROJ_CXXFLAGS) -MMD -MP -c -o $@ $<
