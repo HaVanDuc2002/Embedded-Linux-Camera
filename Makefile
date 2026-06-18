@@ -34,6 +34,7 @@ CERT_DIR = certs
 CLIENT_SRCS = $(SRC_DIR)/main.cpp \
               $(SRC_DIR)/ring_queue.cpp \
               $(SRC_DIR)/camera_capture.cpp \
+              $(SRC_DIR)/camera_monitor.cpp \
               $(SRC_DIR)/tls_client.cpp
 CLIENT_OBJS = $(CLIENT_SRCS:$(SRC_DIR)/%.cpp=$(OUT_DIR)/%.o)
 CLIENT_TARGET = $(OUT_DIR)/camera_streamer
